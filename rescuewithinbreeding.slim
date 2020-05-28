@@ -2,10 +2,15 @@
 
 initialize() {
 	initializeSLiMModelType("nonWF");
-	defineConstant("K", 1000); // can change carrying capacity / initial pop size
+	defineConstant("K", 50); // can change carrying capacity / initial pop size
 	defineConstant("opt1", 0.0);
-	defineConstant("opt2", 9.0); // can change phenotype optimum during selection period
-	defineConstant("Tdelta", 5000);
+	defineConstant("opt2", 8.0); // can change phenotype optimum during selection period
+	defineConstant("Tdelta_opt", 5000); // timing of change in optimum
+	defineConstant("Tdelta_mig", 4500); // timing of change in optimum
+	defineConstant("N", 3);     // number of subpopulations
+	defineConstant("ma", 0.01);   // migration rate
+	defineConstant("e", 0.1);    // subpopulation extinction rate;
+	defineConstant("mb", 0.001); // migration after optimum change 
 
 //	evolutionary rescue alone with quantitative variation
 //	initializeMutationType("m1", 0.5, "n", 0.0, 1.0);  // QTL
@@ -31,25 +36,43 @@ reproduction() {
 	subpop.addCrossed(individual, subpop.sampleIndividuals(1));
 }
 1 early() {
-	sim.addSubpop("p1", 1000); // match to carrying capacity
+	for (i in 1:N)
+		sim.addSubpop(i, (i == 1) ? 10 else 0);
 }
 early() {
 	// QTL-based fitness
 	inds = sim.subpopulations.individuals;
 	phenotypes = inds.sumOfMutationsOfType(m1);
-	optimum = (sim.generation < Tdelta) ? opt1 else opt2;
+	optimum = (sim.generation < Tdelta_opt) ? opt1 else opt2;
 	deviations = optimum - phenotypes;
 	fitnessFunctionMax = dnorm(0.0, 0.0, 5.0);
 	adaptation = dnorm(deviations, 0.0, 5.0) / fitnessFunctionMax;
 	inds.fitnessScaling = 0.1 + adaptation * 0.9;
 	inds.tagF = phenotypes;   // just for output below
+
+	// random migration
+	nIndividuals = sum(sim.subpopulations.individualCount);
+	migrate = (sim.generation <Tdelta_mig) ? ma else mb;
+	nMigrants = rpois(1, nIndividuals * migrate);
+	migrants = sample(sim.subpopulations.individuals, nMigrants);
+	
+	for (migrant in migrants)
+	{
+		do dest = sample(sim.subpopulations, 1);
+		while (dest == migrant.subpopulation);
+		
+		dest.takeMigrants(migrant);
+	}
+
 	
 	// density-dependence with a maximum benefit at low density
 	p1.fitnessScaling = min(K / p1.individualCount, 1.5);
+	p2.fitnessScaling = min(K / p2.individualCount, 1.5);
+	p3.fitnessScaling = min(K / p3.individualCount, 1.5);
 }
 fitness(m1) { return 1.0; }
 late() {
-	if (p1.individualCount == 0)
+	if (p1.individualCount == 0 & p2.individualCount == 0 & p3.individualCount == 0)
 	{
 		// stop at extinction
 		catn("Extinction in generation " + sim.generation + ".");
@@ -60,11 +83,13 @@ late() {
 		// output the phenotypic mean and pop size
 		phenotypes = p1.individuals.tagF;
 		
-		cat(sim.generation + ": " + p1.individualCount + " individuals");
+		cat(sim.generation + ": " + p1.individualCount + " individuals in p1,");
+		cat(p2.individualCount + " individuals in p2,");
+		cat(p3.individualCount + " individuals in p3");
 		cat(", phenotype mean " + mean(phenotypes));
 		if (size(phenotypes) > 1)
 			cat(" (sd " + sd(phenotypes) + ")");
 		catn();
 	}
 }
-10000 late() { sim.simulationFinished(); }
+6000 late() { sim.simulationFinished(); }
