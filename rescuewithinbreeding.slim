@@ -1,0 +1,70 @@
+// Keywords: nonWF, non-Wright-Fisher, QTL, quantitative trait loci, fitness()
+
+initialize() {
+	initializeSLiMModelType("nonWF");
+	defineConstant("K", 1000); // can change carrying capacity / initial pop size
+	defineConstant("opt1", 0.0);
+	defineConstant("opt2", 9.0); // can change phenotype optimum during selection period
+	defineConstant("Tdelta", 5000);
+
+//	evolutionary rescue alone with quantitative variation
+//	initializeMutationType("m1", 0.5, "n", 0.0, 1.0);  // QTL
+//	initializeGenomicElementType("g1", m1, 1);
+//	initializeGenomicElement(g1, 0, 99999);
+//	initializeMutationRate(5e-7);
+//	initializeRecombinationRate(1e-8);
+	
+	
+//	evolutionary rescue with quantitative variation plus deleterious recessive variation
+	initializeMutationType("m1", 0.5, "n", 0.0, 1.0);  // QTL - can change distribution of effects
+	initializeMutationType("m2", 0.01, "n", -0.1, 0.02);  // deleterious recessive - can change distribution of fitness effects
+	initializeGenomicElementType("g1", c(m1,m2), c(0.1,0.9)); // can change ratio of deleterious to quantitative mutations
+	initializeGenomicElement(g1, 0, 99999);
+	initializeMutationRate(2e-7); // can change overall mutation rate
+	initializeRecombinationRate(1e-8); // can change recomb rate
+}
+
+// interesting scenarios for distribution of deleterious fitness effects: (A) normal(-0.05,0.01) has lots of deleterious variation before selection and either extinction or lowered carrying capacity after. quantitative loci mostly don't get fixed, deleterious mutations become fairly common! (B) normal(-0.3,0.06) or (-0.2,0.04) and higher average fitness effects has little deleterious variation before selection and evolutionary rescue almost always brings population back to original carrying capacity. quantitative loci get fixed without increase in frequency of deleterious recessive mutations. (C) normal (0,0), i.e. no deleterious recessive variation, also interesting (evolutionary rescue usually happens!). (D) normal(-0.005, 0.001) has lots of very weak deleterious variation which gets fixed along with quantitative variation. usually evolutionary rescue but sometime not (and somewhat lower carrying capacity after selection)!
+
+
+reproduction() {
+	subpop.addCrossed(individual, subpop.sampleIndividuals(1));
+}
+1 early() {
+	sim.addSubpop("p1", 1000); // match to carrying capacity
+}
+early() {
+	// QTL-based fitness
+	inds = sim.subpopulations.individuals;
+	phenotypes = inds.sumOfMutationsOfType(m1);
+	optimum = (sim.generation < Tdelta) ? opt1 else opt2;
+	deviations = optimum - phenotypes;
+	fitnessFunctionMax = dnorm(0.0, 0.0, 5.0);
+	adaptation = dnorm(deviations, 0.0, 5.0) / fitnessFunctionMax;
+	inds.fitnessScaling = 0.1 + adaptation * 0.9;
+	inds.tagF = phenotypes;   // just for output below
+	
+	// density-dependence with a maximum benefit at low density
+	p1.fitnessScaling = min(K / p1.individualCount, 1.5);
+}
+fitness(m1) { return 1.0; }
+late() {
+	if (p1.individualCount == 0)
+	{
+		// stop at extinction
+		catn("Extinction in generation " + sim.generation + ".");
+		sim.simulationFinished();
+	}
+	else
+	{
+		// output the phenotypic mean and pop size
+		phenotypes = p1.individuals.tagF;
+		
+		cat(sim.generation + ": " + p1.individualCount + " individuals");
+		cat(", phenotype mean " + mean(phenotypes));
+		if (size(phenotypes) > 1)
+			cat(" (sd " + sd(phenotypes) + ")");
+		catn();
+	}
+}
+10000 late() { sim.simulationFinished(); }
